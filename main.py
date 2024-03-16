@@ -1,5 +1,6 @@
 import datetime
 import json
+import logging
 import time
 from selenium import webdriver
 from selenium.webdriver import ChromeOptions
@@ -11,10 +12,10 @@ from selenium.webdriver.common.action_chains import ActionChains
 from secret.env_key import ID, ORG_CD, PW
 
 
-def click_element(driver: webdriver, xpath: str, on_fail=None):
+def click_element(driver: webdriver, xpath: str, on_fail=None, delay=0.6):
     try:
         driver.find_element(By.XPATH, xpath).click()
-        time.sleep(0.6)
+        time.sleep(delay)
     except NoSuchElementException:
         pass
 
@@ -33,59 +34,77 @@ def login_process(driver: webdriver):
     driver.find_element(By.XPATH, login_xpath + "/li[2]/input").send_keys(ID)
     driver.find_element(By.XPATH, login_xpath + "/li[3]/input").send_keys(PW)
     driver.find_element(By.XPATH, login_xpath + "/li[4]/input").click()
+    logging.info(f"로그인 성공 (ID: {ID})")
 
-
-def check_alert_process(driver: webdriver):
+    # 공지 팝업이 존재하면 각각 닫기
     click_element(driver, '//*[@id="layerModal"]/div/div[6]/span[2]')
     click_element(driver, '//*[@id="layerModal"]/section/section/section[3]/div')
 
 
-def go_section_3_1_process(driver: webdriver):
-    click_element(driver, '//*[@id="left_area"]/div[4]/ul/li[3]')
-    click_element(
-        driver, '//*[@id="left_sub3"]/div[2]/table/tbody/tr[2]/td/div/ul/li[1]'
-    )
+def go_last_week(driver: webdriver):
+    click_element(driver, '//*[@id="r_padding"]/div[5]/div/div[1]/div/div[1]/span[1]')
+    time.sleep(_delay)
+    logging.info(">> 지난주로 이동")
 
 
 if __name__ == "__main__":
-    _delay = 0.8
+    logging.basicConfig(
+        format="%(levelname)s: %(message)s",
+        level=logging.INFO,
+        filename="output.log",
+        encoding="utf-8",
+    )
+    console = logging.StreamHandler()
+    console.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
+    logging.getLogger().addHandler(console)
+    
+    _delay = 1
     _driver: webdriver = init_driver()
     _actions = ActionChains(_driver)
+
     login_process(_driver)
-    check_alert_process(_driver)
-    go_section_3_1_process(_driver)
+    click_element(_driver, '//*[@id="left_area"]/div[4]/ul/li[3]')
+    click_element(_driver, '//*[@id="left_sub3"]/div[2]/table/tbody/tr[2]/td/div/ul/li[1]')
+    time.sleep(_delay)
 
     table_xpath = '//*[@id="care_service_list_table"]/tbody'
     info_xpath = '//*[@id="care_service_tbl"]/tbody'
-    people_li = _driver.find_elements(By.XPATH, table_xpath + "/tr")
-
-    res = {}
-    time.sleep(_delay)
-    date_txt = _driver.find_element(By.XPATH, f"{info_xpath}/tr[1]/th[2]/span[1]").text
-    date = datetime.datetime(*map(int, date_txt.split(".")))
-    res['date'] = [(date + datetime.timedelta(days=i)).strftime("%Y-%m-%d") for i in range(6)]
-
-    for i, people in enumerate(people_li[:-1]):
-        name_xpath = f"{table_xpath}/tr[{i+1}]/td[3]"
-        target_ele = _driver.find_element(By.XPATH, name_xpath)
-        nm = target_ele.text
-        _actions.move_to_element(target_ele).perform()
-        target_ele.click()
-        time.sleep(_delay)
-
-        msg_li = []
-        for i in range(1, 7):
-            try:
-                ele = _driver.find_element(By.XPATH, f"{info_xpath}/tr[1]/th[{i+1}]/div/div")
-                msg_li.append("*"*8 + ele.text)
-            except NoSuchElementException:
-                if i == 6 and len(_driver.find_elements(By.XPATH, f"{info_xpath}/tr[1]/th[7]")) == 0:
-                    continue
-                txt = _driver.find_element(By.XPATH, f"{info_xpath}/tr[17]/td[{i}]/textarea").text
-                msg_li.append(txt)
-        res[nm] = msg_li
     
-    with open("output.json", "wt", encoding="utf8") as f:
-        json.dump(res, f, ensure_ascii=False)
+    for _ in range(11):
+        go_last_week(_driver)
+
+    for week_i in range(9):
+        res = {}
+        date_txt = _driver.find_element(By.XPATH, f"{info_xpath}/tr[1]/th[2]/span[1]").text
+        date = datetime.datetime(*map(int, date_txt.split(".")))
+        res["date"] = [(date + datetime.timedelta(days=i)).strftime("%Y-%m-%d") for i in range(6)]
+        logging.info(f"1) 날짜 수집 성공 ({res['date'][0]} ~ {res['date'][-1]})")
+
+        people_li = _driver.find_elements(By.XPATH, table_xpath + "/tr")
+        logging.info(f"2) 수급자 목록 수집 성공 (총 {len(people_li)-1} 명)")
+        for people_i, people in enumerate(people_li[:-1]):
+            people_name = _driver.find_element(By.XPATH, f"{table_xpath}/tr[{people_i+1}]/td[3]")
+            _actions.move_to_element(people_name).perform()
+            people_name.click()
+            time.sleep(_delay)
+
+            msg_li = []
+            for day_i in range(1, 7):
+                if day_i == 6 and len(_driver.find_elements(By.XPATH, f"{info_xpath}/tr[1]/th[7]")) == 0:
+                    continue
+                try:
+                    ele = _driver.find_element(By.XPATH, f"{info_xpath}/tr[1]/th[{day_i+1}]/div/div")
+                    msg_li.append("*" * 8 + ele.text)
+                except NoSuchElementException:
+                    txt = _driver.find_element(By.XPATH, f"{info_xpath}/tr[17]/td[{day_i}]/textarea").text
+                    msg_li.append(txt)
+            res[people_name.text] = msg_li
+            logging.info(f"- 기재내역 수집 성공 (성함: {people_name.text}, 수집한 일자: {len(msg_li)} 일) ({people_i+1}/{len(people_li)-1})")
+
+        with open(f"output_{date.strftime('%Y%m%d')}.json", "wt", encoding="utf8") as f:
+            json.dump(res, f, ensure_ascii=False)
+            logging.info(f"3) 파일 저장 완료 (파일명: output_{date.strftime('%Y%m%d')}.json)")
+            
+        go_last_week(_driver)
 
     _driver.quit()
