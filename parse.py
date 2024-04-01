@@ -1,7 +1,7 @@
 import json
 import os
 from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, PageBreak
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, PageTemplate, Frame
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfbase import pdfmetrics
 from reportlab.lib import colors
@@ -20,6 +20,7 @@ def merge_file():
         for f in os.listdir(output_directory)
         if f.startswith("output_") and f.endswith(".json")
     ]
+    json_files.sort(reverse=True)
 
     all_data = []
     for file in json_files:
@@ -31,15 +32,16 @@ def merge_file():
         json.dump(all_data, f, ensure_ascii=False)
 
 
-def parse_data():
+def load_file():
     res = []
     with open(output_file_path, "rt", encoding="utf8") as f:
         res = json.load(f)
     return res
 
 
-def export_excel(data_li):
-    table_data = [("날짜", "수급자명", "본문")]
+def processing_data(data_li):
+    _max_width = 60
+    res = [("날짜", "성함", "본문")]
     cnt = 0
     for data in data_li:
         for key in data:
@@ -49,43 +51,51 @@ def export_excel(data_li):
             cnt += len(msg_li)
             for i, msg in enumerate(msg_li):
                 if search_text in msg:
-                    table_data.append((data['date'][i], key, msg.replace(search_text, f"『{search_text}』")))
+                    _msg = (
+                        msg.replace(search_text, f"『{search_text}』")
+                        .replace("\n", " ")
+                        .replace("  ", " ")
+                        .replace("  ", " ")
+                    )
+                    if len(_msg) > _max_width:
+                        _msg = "\n".join(
+                            _msg[_max_width * i : _max_width * (i + 1)]
+                            for i in range(len(_msg) // _max_width + 1)
+                        )
+                    res.append((data["date"][i], key, _msg))
     print(cnt)
+    return res
 
-    # PDF 생성
-    pdfmetrics.registerFont(TTFont("NanumMyeongjo", "NanumMyeongjo-Regular.ttf"))
-    doc = SimpleDocTemplate(pdf_file_path, pagesize=A4)
-    elements = []
-    
-    # 테이블 생성
-    table_style = TableStyle(
+
+def _add_page_number(canvas, doc):
+    page_num = canvas.getPageNumber()
+    text = f"Page {page_num}"
+    canvas.setFont("NanumMyeongjo", 8.5)
+    canvas.drawString(10, 9, text)
+
+
+def _init_table_style():
+    return TableStyle(
         [
             ("TEXTCOLOR", (0, 0), (-1, -1), colors.black),
             ("ALIGN", (0, 0), (-1, -1), "LEFT"),
             ("FONTNAME", (0, 0), (-1, -1), "NanumMyeongjo"),
-            ("FONTSIZE", (0, 0), (-1, -1), 9),
+            ("FONTSIZE", (0, 0), (-1, -1), 8.5),
             ("GRID", (0, 0), (-1, -1), 1, colors.black),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ]
     )
-    
-    max_rows_per_page = 25
-    for i in range(0, len(table_data), max_rows_per_page):
-        page_data = table_data[i:i+max_rows_per_page]
 
-        # 테이블 생성
-        table = Table(page_data, colWidths=[80, 60, 420])
-        table.setStyle(table_style)
-        elements.append(table)
 
-        # 페이지 브레이크 추가
-        if i + max_rows_per_page < len(data):
-            elements.append(PageBreak())
-    doc.build(elements)
-
+def export_pdf(data):
+    pdfmetrics.registerFont(TTFont("NanumMyeongjo", "NanumMyeongjo-Regular.ttf"))
+    doc = SimpleDocTemplate(pdf_file_path, pagesize=A4, topMargin=40, bottomMargin=25)
+    table = Table(data, colWidths=[65, 50, 445])
+    table.setStyle(_init_table_style())
+    doc.build([table], onFirstPage=_add_page_number, onLaterPages=_add_page_number)
 
 
 if __name__ == "__main__":
     # merge_file()
-    dat = parse_data()
-    export_excel(dat)
+    export_pdf(processing_data(load_file()))
     ...
