@@ -167,11 +167,12 @@ class CrawlCarefor:
                     msg_li.append(msg.text)
                 except CRAWLING_EXCEPTION:
                     self.delay(1)
-                    # double check
                     day_li = self.driver.find_elements(By.XPATH, self.info_xpath + "/tr[1]/th[7]")
                     except_msg = self.driver.find_elements(By.XPATH, f"{self.info_xpath}/tr[1]/th[{day_i+1}]/div/div")
                     if len(except_msg) > 0 or (day_i == 6 and len(day_li) == 0):
                         msg_li.append("*" * 10 + "(기타 조회 실패)")
+                        logging.info(f"[!] 조회 실패 ({self.res['date'][day_i]})")
+                        continue
                     
                     msg = self.find_xpath(f"{self.info_xpath}/tr[17]/td[{day_i}]/textarea")
                     msg_li.append(msg.text)
