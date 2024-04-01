@@ -7,7 +7,7 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.lib import colors
 
 
-search_text = "간호"
+search_text_li = ("간호", "투약")
 current_directory = os.path.dirname(os.path.abspath(__file__))
 output_directory = os.path.join(current_directory, "output")
 output_file_path = os.path.join(output_directory, "combined_output.json")
@@ -50,19 +50,21 @@ def processing_data(data_li):
             msg_li = data[key]
             cnt += len(msg_li)
             for i, msg in enumerate(msg_li):
-                if search_text in msg:
-                    _msg = (
-                        msg.replace(search_text, f"『{search_text}』")
-                        .replace("\n", " ")
-                        .replace("  ", " ")
-                        .replace("  ", " ")
-                    )
-                    if len(_msg) > _max_width:
-                        _msg = "\n".join(
-                            _msg[_max_width * i : _max_width * (i + 1)]
-                            for i in range(len(_msg) // _max_width + 1)
+                for search_text in search_text_li:
+                    if search_text in msg:
+                        if '수급자' in msg and '안전교육' in msg: continue
+                        _msg = (
+                            msg.replace(search_text, f"『{search_text}』")
+                            .replace("\n", " ")
+                            .replace("  ", " ")
+                            .replace("  ", " ")
                         )
-                    res.append((data["date"][i], key, _msg))
+                        if len(_msg) > _max_width:
+                            _msg = "\n".join(
+                                _msg[_max_width * i : _max_width * (i + 1)]
+                                for i in range(len(_msg) // _max_width + 1)
+                            )
+                        res.append((data["date"][i], key, _msg))
     print(cnt)
     return res
 
